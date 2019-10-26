@@ -22,7 +22,7 @@ math.isZero = function(n, e)
 end
 
 math.pixel = function(n)
-  return math.floor(n + 0.5)
+  return math.floor(n)
 end
 
 -- Table Ext
@@ -106,6 +106,7 @@ Vec2.negated = function(v)
 end
 
 Vec2.rotated = function(v, alpha)
+  if "number" ~= type(alpha) then return error("Bad alpha") end
   local sina = math.sin(alpha)
   local cosa = math.cos(alpha)
   local x = v.x*cosa - v.y*sina
@@ -124,6 +125,22 @@ Vec2.fixZeroes = function(v)
  if math.isZero(v.y) then
   v.y = 0
  end
+end
+
+function traversePolar(
+  angleStart, angleEnd, angleMaxSteps, 
+  rStart, rEnd, rSteps,
+  visitor)
+  local rLen = rEnd - rStart
+  local angleLen = angleEnd - angleStart
+  local rStep = rLen/rSteps
+  for r = rStart, rEnd, rStep do
+    local angleSteps = math.floor(angleMaxSteps*(r - rStart)/rLen)
+    local angleStep = angleLen/(angleSteps ~= 0 and angleSteps or 1)
+    for angle = angleStart, angleEnd, angleStep do
+      visitor(angle, r)
+    end
+  end
 end
 
 -- Gamepad Utils
@@ -609,33 +626,92 @@ end
 
 local Planet = class("Planet", Entity)
 
-local PlanetSurfaceRender = {
-  psrSeed = 1;
-  psrColor = Colors.PastelGreen;
+local PlanetSurfaceNoise  = {
+  pattern = { 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1 };
 
-  drawPSR = function(self, r)
-    GPU.color(self.psrColor)
-    GPU.circle(0, 0, r)
+  sample = function(self, offset)
+    return self.pattern[math.abs(offset)%#self.pattern + 1]
   end;
 }
-
-Planet:include(PlanetSurfaceRender)
 
 function Planet:initialize(x,y,r)
   Entity.initialize(self)
   self.position = Vec2.new(x, y)
   self.r = r
 
+  self.mass = r*8
+
   self.body = CollisionBody:new()
   self.body:setCircle(self.position, self.r)
 
-  self.mass = r*8
+  self.renderSeed = 1
+  self.renderMainColor = Colors.PastelGreen
+  self.renderFeaturesColor = Colors.Green
 end
 
 function Planet:draw()
   GPU.pushMatrix()
   GPU.cam("translate", self.position.x, self.position.y)
-  self:drawPSR(self.r)
+
+  --main body
+  GPU.color(self.renderMainColor)
+  GPU.circle(0, 0, self.r)
+
+  -- surface fuzz
+  local surfaceHeight = 0.2
+  traversePolar(
+    0, 2.0*math.pi, 36,
+    self.r + surfaceHeight - 3, self.r + surfaceHeight, 3,
+    function(angleStep, radiusStep)
+      local arm = Vec2.rotated(Vec2.new(0, radiusStep), angleStep)
+      local step = math.floor(2.0*math.pi/angleStep)
+      local noiseOffset = self.renderSeed + step
+      local noise = PlanetSurfaceNoise:sample(noiseOffset)
+      GPU.color(self.renderFeaturesColor)
+      GPU.point(math.pixel(arm.x), math.pixel(arm.y))
+    end)
+
+  -- body features, sort of perlin
+  local fpCellSize = math.floor(math.min(self.r, 8))
+  local fpGridSize = math.floor(2*self.r/fpCellSize)
+  local fpGridCoord = function(c)
+    return math.abs(math.floor(c/fpCellSize))
+  end
+
+  local featurePerlin = function(angleStep, radiusStep)
+    local arm = Vec2.rotated(Vec2.new(0, radiusStep), angleStep)
+    local pxi, pxf = math.modf(arm.x + self.r + 1) -- we just move it all into positives
+    local pyi, pyf = math.modf(arm.y + self.r + 1) -- we just move it all into positives
+    local pxBox = fpGridCoord(pxi)
+    local pyBox = fpGridCoord(pyi)
+    if pxf < 0.33 then
+      pxBox = pxBox - 1
+    elseif pxf > 0.66 then
+      pxBox = pxBox + 1
+    end
+    if pyf < 0.33 then
+      pyBox = pyBox - 1
+    elseif pyf > 0.66 then
+      pyBox = pyBox + 1
+    end
+    local noiseOffset = self.renderSeed + pxBox + pyBox*fpGridSize
+    local noise = PlanetSurfaceNoise:sample(noiseOffset)
+    if 0 == noise%2 then
+      GPU.color(self.renderFeaturesColor)
+      GPU.point(math.pixel(arm.x), math.pixel(arm.y))
+    end
+  end
+
+  traversePolar(
+    0, 2*math.pi, 18,
+    1, self.r - 1, math.floor(self.r/2),
+    featurePerlin)
+  
+  traversePolar(
+    0.35*math.pi, 2.35*math.pi, 18,
+    1, self.r - 2, math.floor(self.r/4),
+    featurePerlin)
+
   GPU.popMatrix()
 end
 
@@ -1033,6 +1109,9 @@ function GameStateGame:initialize()
   self.plane:addPlanet(planetA)
 
   local planetB = Planet:new(ScreenCX + 40, ScreenCY, 12)
+  planetB.renderSeed = 2
+  planetB.renderMainColor = Colors.Brown
+  planetB.renderFeaturesColor = Colors.Graphite
   self.plane:addPlanet(planetB)
  
   self.spaceshipA = Spaceship:new(ScreenCX - 40, ScreenCY + 30, -16.3, 0)
