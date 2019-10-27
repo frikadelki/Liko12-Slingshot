@@ -175,6 +175,10 @@ function Gamepad:updateEdges(dt)
   end
 end
 
+function Gamepad:btn(button)
+  return btn(button)
+end
+
 function Gamepad:btnEdge(button, dt)
   if not self.edges[button] then
     return false
@@ -750,7 +754,6 @@ SpaceshipControls = {
 function Spaceship:initialize(x, y)
   Entity.initialize(self)
   self.dead = false
-  self.stasisWait = false
   self.stasis = true
 
   self.position = Vec2.new(x, y)
@@ -759,11 +762,14 @@ function Spaceship:initialize(x, y)
   self.forward = SpaceshipShape.forward
   self.forwardAlpha = 0
 
-  self.burnPower = 0
-  self.burnAnimation = Animation:new(0.5, false)
-
   self.body = CollisionBody:new()
   self:updateBodyShape()
+
+  self.stasisWait = false
+  self.sasNoseToV = false
+  
+  self.burnPower = 0
+  self.burnAnimation = Animation:new(0.5, false)
 end
 
 function Spaceship:explode(collision)
@@ -779,17 +785,6 @@ function Spaceship:accelerate(a)
     return 
   end
   self:setSpeed(Vec2.sum(self.velocity, a))
-end
-
-function Spaceship:checkStasis(pullDirection)
-  if not self.stasisWait then
-    return
-  end
-  local dot = Vec2.dot(pullDirection, self.velocity)
-  if math.isZero(dot) then
-    self.stasisWait = false
-    self.stasis = true
-  end
 end
 
 function Spaceship:setSpeed(newv)
@@ -840,16 +835,49 @@ function Spaceship:updateBodyShape()
   self.body:setPolygon(shape)
 end
 
+function Spaceship:checkAutoStasis(pullDirection)
+  if not self.stasisWait then
+    return
+  end
+  local dot = Vec2.dot(pullDirection, self.velocity)
+  if math.isZero(dot) then
+    self.stasis = true
+    self.stasisWait = false
+  end
+end
+
+function Spaceship:engageStasis()
+  if self.stasis then
+    return
+  end
+  if self.stasisWait then
+    -- forced stasis at any point, think about that
+    self.stasis = true
+  else
+    self.stasisWait = true
+  end
+end
+
+function Spaceship:burn()
+  if not self.burnAnimation:isFinished() then
+    return 
+  end
+  self.stasis = false
+  self.stasisWait = false
+  local a = Vec2.scaled(self.forward, self.burnPower)
+  self.burnPower = 0
+  self:accelerate(a)
+  if not Vec2.isZero(a) then
+    self.burnAnimation:restart()
+  end
+end
+
 function Spaceship:checkInput()
   if self.dead then
     return
   end
   if Gamepad:btnEdge(SpaceshipControls.Stasis) then
-    if self.stasis or self.stasisWait then
-      self.burnPower = 0
-    else
-      self.stasisWait = true
-    end
+    self:engageStasis()
   end
   if Gamepad:btnEdge(SpaceshipControls.Burn) then
     self:burn()
@@ -879,19 +907,6 @@ function Spaceship:update(dt)
     self:updateBodyShape()
   end
   self.burnAnimation:update(dt)
-end
-
-function Spaceship:burn()
-  if not self.burnAnimation:isFinished() then
-    return 
-  end
-  self.stasis = false
-  local a = Vec2.scaled(self.forward, self.burnPower)
-  self.burnPower = 0
-  self:accelerate(a)
-  if not Vec2.isZero(a) then
-    self.burnAnimation:restart()
-  end
 end
 
 function Spaceship:draw()
@@ -998,9 +1013,9 @@ function Plane:updateShip(ship, dt)
 
   -- auto stasis
   if maxA then
-    ship:checkStasis(maxA)
+    ship:checkAutoStasis(maxA)
   end
-  --ship:checkStasis(totalA)
+  --ship:checkAutoStasis(totalA)
 
   -- udpate & collision
   ship:update(dt)
@@ -1136,18 +1151,22 @@ function GameStateGame:initialize()
 end
 
 function GameStateGame:update(dt)
+  -- update plane
+  self.plane:update(dt)
+
+  -- update hud
   local stasisMode = nil
   if self.spaceshipA.stasis then
     stasisMode = "hold"
   elseif self.spaceshipA.stasisWait then
-    stasisMode = "wait"
+    stasisMode = "auto"
   else
     stasisMode = "idle"
   end
-
-  self.plane:update(dt)
   self.hud:setSpeed(self.spaceshipA.velocity)
   self.hud:setControls(self.spaceshipA.burnPower, stasisMode)
+  
+  -- check game over
   if not self.plane:isAlive() then
     gotoGameOver(self.plane)
   end
