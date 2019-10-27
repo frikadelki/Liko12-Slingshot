@@ -876,25 +876,38 @@ function Spaceship:checkInput()
   if self.dead then
     return
   end
+
+  --stasis
   if Gamepad:btnEdge(SpaceshipControls.Stasis) then
     self:engageStasis()
   end
-  if Gamepad:btnEdge(SpaceshipControls.Burn) then
-    self:burn()
-  end
+
+  -- nose direction
   if Gamepad:btnEdge(SpaceshipControls.NoseLeft) then
     self:rotateNose(-SpaceshipControls.DeltaNose)
   end
   if Gamepad:btnEdge(SpaceshipControls.NoseRight) then
     self:rotateNose(SpaceshipControls.DeltaNose)
   end
-  if Gamepad:btnEdge(SpaceshipControls.BurnUp) or 
-     Gamepad:btnLongPress(SpaceshipControls.BurnUp) then
-    self.burnPower = self.burnPower + SpaceshipControls.DeltaBurn
+
+  --burn
+  local checkDeltaBurn = function(button)
+    return Gamepad:btnEdge(button) or Gamepad:btnLongPress(button)
   end
-  if Gamepad:btnEdge(SpaceshipControls.BurnDown) or
-     Gamepad:btnLongPress(SpaceshipControls.BurnDown) then
-    self.burnPower = self.burnPower - SpaceshipControls.DeltaBurn
+
+  if Gamepad:btn(SpaceshipControls.BurnUp) and Gamepad:btn(SpaceshipControls.BurnDown) then
+    self.burnPower = 0
+  else
+    if checkDeltaBurn(SpaceshipControls.BurnUp) then
+      self.burnPower = self.burnPower + SpaceshipControls.DeltaBurn
+    end
+    if checkDeltaBurn(SpaceshipControls.BurnDown) then
+      self.burnPower = self.burnPower - SpaceshipControls.DeltaBurn
+    end
+  end
+  
+  if Gamepad:btnEdge(SpaceshipControls.Burn) then
+    self:burn()
   end
 end
 
