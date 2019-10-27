@@ -165,8 +165,7 @@ function Gamepad:updateEdges(dt)
     local pressed = btn(button)
     if pressed then
       if self.edges[button] then
-        local i, f = math.modf(self.edges[button] + dt)
-        self.edges[button] = f
+        self.edges[button] = self.edges[button] + dt
       else 
         self.edges[button] = 0
       end
@@ -180,9 +179,15 @@ function Gamepad:btnEdge(button, dt)
   if not self.edges[button] then
     return false
   end
-  dt = dt or 1
-  local i, f = math.modf(self.edges[button]/dt)
-  return math.isZero(f)
+  return 0 == self.edges[button]
+end
+
+function Gamepad:btnLongPress(button, time)
+  if not self.edges[button] then
+    return false
+  end
+  local time = time or 0.5
+  return self.edges[button] >= time
 end
 
 -- GPU Utils
@@ -658,7 +663,7 @@ function Planet:draw()
   GPU.circle(0, 0, self.r)
 
   -- surface fuzz
-  local surfaceHeight = 0.2
+  local surfaceHeight = 0.1
   traversePolar(
     0, 2.0*math.pi, 36,
     self.r + surfaceHeight - 3, self.r + surfaceHeight, 3,
@@ -754,7 +759,7 @@ function Spaceship:initialize(x, y)
   self.forward = SpaceshipShape.forward
   self.forwardAlpha = 0
 
-  self.burnPower = 16.3
+  self.burnPower = 0
   self.burnAnimation = Animation:new(0.5, false)
 
   self.body = CollisionBody:new()
@@ -763,13 +768,16 @@ end
 
 function Spaceship:explode(collision)
   if (self.dead) then return error("Already dead.") end
-  self.stasis = true
   self.dead = true
+  self.stasis = true
+  -- TODO: wierd
   return { Explosion:new(collision.point) }
 end
 
 function Spaceship:accelerate(a)
-  if (self.stasis) then return end
+  if (self.stasis) then 
+    return 
+  end
   self:setSpeed(Vec2.sum(self.velocity, a))
 end
 
@@ -832,31 +840,38 @@ function Spaceship:updateBodyShape()
   self.body:setPolygon(shape)
 end
 
-function Spaceship:update(dt)
-  if not self.dead then
-    if Gamepad:btnEdge(SpaceshipControls.Stasis) then
-      if self.stasis or self.stasisWait then
-        self.burnPower = 0
-      else
-        self.stasisWait = true
-      end
-    end
-    if Gamepad:btnEdge(SpaceshipControls.Burn) then
-      self:burn()
-    end
-    if Gamepad:btnEdge(SpaceshipControls.NoseLeft) then
-      self:rotateNose(-SpaceshipControls.DeltaNose)
-    end
-    if Gamepad:btnEdge(SpaceshipControls.NoseRight) then
-      self:rotateNose(SpaceshipControls.DeltaNose)
-    end
-    if Gamepad:btnEdge(SpaceshipControls.BurnUp) then
-      self.burnPower = self.burnPower + SpaceshipControls.DeltaBurn
-    end
-    if Gamepad:btnEdge(SpaceshipControls.BurnDown) then
-      self.burnPower = self.burnPower - SpaceshipControls.DeltaBurn
+function Spaceship:checkInput()
+  if self.dead then
+    return
+  end
+  if Gamepad:btnEdge(SpaceshipControls.Stasis) then
+    if self.stasis or self.stasisWait then
+      self.burnPower = 0
+    else
+      self.stasisWait = true
     end
   end
+  if Gamepad:btnEdge(SpaceshipControls.Burn) then
+    self:burn()
+  end
+  if Gamepad:btnEdge(SpaceshipControls.NoseLeft) then
+    self:rotateNose(-SpaceshipControls.DeltaNose)
+  end
+  if Gamepad:btnEdge(SpaceshipControls.NoseRight) then
+    self:rotateNose(SpaceshipControls.DeltaNose)
+  end
+  if Gamepad:btnEdge(SpaceshipControls.BurnUp) or 
+     Gamepad:btnLongPress(SpaceshipControls.BurnUp) then
+    self.burnPower = self.burnPower + SpaceshipControls.DeltaBurn
+  end
+  if Gamepad:btnEdge(SpaceshipControls.BurnDown) or
+     Gamepad:btnLongPress(SpaceshipControls.BurnDown) then
+    self.burnPower = self.burnPower - SpaceshipControls.DeltaBurn
+  end
+end
+
+function Spaceship:update(dt)
+  self:checkInput()
 
   if not self.stasis then
     local dd = Vec2.scaled(self.velocity, dt)
@@ -989,9 +1004,7 @@ function Plane:updateShip(ship, dt)
 
   -- udpate & collision
   ship:update(dt)
-  if not ship.stasis then
-    self:checkShipCollisons(ship)
-  end
+  self:checkShipCollisons(ship)
 end
 
 function Plane:planetToShipForce(ship, planet)
@@ -1007,7 +1020,9 @@ function Plane:planetToShipForce(ship, planet)
 end
 
 function Plane:checkShipCollisons(ship)
-  if (ship.stasis) then return end
+  if (ship.stasis) then 
+    return 
+  end
   local collision = self.collider:checkBody(ship.body)
   if collision then
     self:handleCollision(ship, collision)
@@ -1166,15 +1181,10 @@ function GameStateMainMenu:initialize()
 
   self.screen = ScreenPanel:new()
   self.screen:addWidget(self.titleBox)
-
-  self.introWait = 1
 end
 
 function GameStateMainMenu:update(dt)
-  if self.introWait > 0 then
-    self.introWait = self.introWait - dt
-  end
-  if Gamepad:btnEdge(GamepadButtons.Start) and self.introWait <= 0 then
+  if Gamepad:btnEdge(GamepadButtons.Start) then
     gotoNewGame()
   end
 end
