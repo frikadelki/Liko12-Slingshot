@@ -770,6 +770,7 @@ function Spaceship:initialize(x, y)
   
   self.burnPower = 0
   self.burnAnimation = Animation:new(0.5, false)
+  self.burnDirection = Vec2.new(0, 0)
 end
 
 function Spaceship:explode(collision)
@@ -793,9 +794,12 @@ function Spaceship:setSpeed(newv)
   self:alignNoseToV()
 end
 
-function Spaceship:alignNoseToV()
-  if Vec2.isZero(self.velocity) then return end
-  self.forward = Vec2.normalized(self.velocity)
+function Spaceship:alignNoseToV(v)
+  v = v or self.velocity
+  if Vec2.isZero(v) then 
+    return 
+  end
+  self.forward = Vec2.normalized(v)
   self:updateForwardToAlpha()
 end
 
@@ -862,12 +866,17 @@ function Spaceship:burn()
   if not self.burnAnimation:isFinished() then
     return 
   end
-  local a = Vec2.scaled(self.forward, self.burnPower)
+  local burnDirection = self.forward
+  local burnPower = self.burnPower
+
   self.stasis = false
   self.stasisWait = false
   self.burnPower = 0
+
+  local a = Vec2.scaled(burnDirection, burnPower)
   if not Vec2.isZero(a) then
     self:accelerate(a)
+    self.burnDirection = burnDirection
     self.burnAnimation:restart()
   end
 end
@@ -915,6 +924,16 @@ function Spaceship:update(dt)
   self:checkInput()
 
   if not self.stasis then
+    if not self.burnAnimation:isFinished() and 
+       not Vec2.isZero(self.burnDirection) and
+       not Vec2.isZero(self.velocity) then
+      local velocityDirection = Vec2.normalized(self.velocity)
+      local burnDirection = self.burnDirection
+      local fullAlphaCos = Vec2.dot(velocityDirection, burnDirection)
+      local fullAlpha = math.acos(fullAlphaCos)
+      local noseAlpha = self.burnAnimation:interpolateLinear(0, fullAlpha)
+      self:alignNoseToV(Vec2.rotated(burnDirection, -noseAlpha))
+    end
     local dd = Vec2.scaled(self.velocity, dt)
     self.position = Vec2.sum(self.position, dd)
     self:updateBodyShape()
