@@ -862,12 +862,12 @@ function Spaceship:burn()
   if not self.burnAnimation:isFinished() then
     return 
   end
+  local a = Vec2.scaled(self.forward, self.burnPower)
   self.stasis = false
   self.stasisWait = false
-  local a = Vec2.scaled(self.forward, self.burnPower)
   self.burnPower = 0
-  self:accelerate(a)
   if not Vec2.isZero(a) then
+    self:accelerate(a)
     self.burnAnimation:restart()
   end
 end
@@ -1198,18 +1198,26 @@ local GameStateMainMenu = class("GameStateMainMenu", GameState)
 
 function GameStateMainMenu:initialize()
   self.titleText = TextView:new(
+    "".."\n"..
+    "".."\n"..
     "S         S H O T".."\n"..
     "  L     G        ".."\n"..
     "    I N          ".."\n"..
     "".."\n"..
+    "start game [c]".."\n"..
     "".."\n"..
-    "press start (c)")
+    "".."\n"..
+    "GAME CONTROLS".."\n"..
+    "[left]/[right] - rotate ship".."\n"..
+    "[up]/[down] - burn amount".."\n"..
+    "[x] - burn".."\n"..
+    "[z] - stasis")
   self.titleText:setLinesGap(3)
   self.titleText:setGravity(WidgetGravity.Center)
 
   self.titleBox = AbsBox:new(0, 0, ScreenW, ScreenH)
   self.titleBox:setWidget(self.titleText)
-  self.titleBox:setPadding(24, 16, 32, 16)
+  self.titleBox:setPadding(16, 16, 16, 16)
 
   self.screen = ScreenPanel:new()
   self.screen:addWidget(self.titleBox)
